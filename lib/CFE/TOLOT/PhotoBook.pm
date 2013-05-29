@@ -8,6 +8,7 @@ use File::Temp qw/tempfile/;
 use Archive::Zip;
 use Data::Dumper;
 use XML::Simple;
+use Encode;
 
 has image_file_list => (
     is  => "rw",
@@ -47,10 +48,16 @@ has debug =>(
     default => sub { 1 },
 );
 
+has check_img_num =>(
+    is => "rw",
+    isa => "Bool",
+    default => sub { 1 },
+);
+
 sub set_image_file_list_by_url_list {
     my ($self, @url_list) = @_;
 
-    die "TOLOT photo book must be 62p" unless ( scalar(@url_list) == 62 );
+    die "TOLOT photo book must be 62p" unless ( !$self->check_img_num || scalar(@url_list) == 62 );
 
     warn "get_images_by_url_list \n" . join("\n", @url_list) if $self->debug;
 
@@ -98,9 +105,9 @@ sub create_zip{
     $zip->addFile( $self->data_base_dir."/content.opf", 'tolot/OEBPS/content.opf');
     $zip->addFile( $self->data_base_dir."/info.xml", 'tolot/OEBPS/tolot/info.xml');
 
-
     # add page data.
-    for(0..61){
+    my $image_file_num = scalar(@{$self->image_file_list}) - 1;
+    for(0..$image_file_num){
       $zip->addFile( $self->data_base_dir."/texts/page$_.xhtml", "tolot/OEBPS/texts/page$_.xhtml");
       $zip->addFile( $self->image_file_list->[$_+0], "tolot/OEBPS/images/$_.jpg");
     }
@@ -115,7 +122,7 @@ sub create_zip{
     );
     $book_xml->{themeCode} = $theme_code_list[0];
     $zip->addString( 
-        XMLout( $book_xml, NoAttr=>1, RootName=>'book', XMLDecl=>"<?xml version='1.0' encoding='UTF-8'?>" ),
+        encode('utf-8', XMLout( $book_xml, NoAttr=>1, RootName=>'book', XMLDecl=>"<?xml version='1.0' encoding='UTF-8'?>" )),
         'tolot/OEBPS/tolot/book.xml'
     );
 
