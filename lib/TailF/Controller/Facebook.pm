@@ -63,6 +63,7 @@ sub update_photo {
 
     my $newest_facebook_photo_created = $newest_facebook_photo[0] ? $newest_facebook_photo[0]->created_time : 0 ;
     my $offset = 0;
+    my $target_photo_id_list = [];
     while (1) {
       $self->app->log->debug("START get data Facebook API URL");
       $uri->query_form(
@@ -115,11 +116,62 @@ sub update_photo {
           $self->app->log->warn("try save dup img. $i->{images}->{thumbnail}->{url}. skipped");
         }
 
+        push @$target_photo_id_list, $i->{object_id};
+
       }
 
       $offset = $offset +$FACEBOOK_LIMIT_NUM ;
       last if $offset > $FACEBOOK_HARD_LIMIT_NUM;
     };
+
+    #update bigger img size
+    $self->app->log->debug("START get data Facebook API URL for get BIGGER img src");
+    $uri->query_form(
+      access_token => $_user->facebook_token,
+      encode => "json",
+      q => "
+        select photo_id,src,width,height 
+        FROM photo_src
+        WHERE photo_id IN (". join(',', @$target_photo_id_list) .") AND (width > 720 OR height > 720) 
+      "
+      );
+
+    my $res = retry 3, 2, sub {
+      $self->app->log->debug('try facebook :'.$uri->as_string);
+      $f->get($uri);
+    }, sub {
+      my $res = shift;
+      $res->is_success ? 0 : 1;
+    } ;
+
+    my $search_result = decode_json($res->content);
+    my $_photo_list = {};
+
+    foreach my $i (@{$search_result->{data}}) {
+      my $_tmp = {
+        photo_id=>$i->{photo_id},
+        width=> $i->{width},
+        height=> $i->{height},
+        src=> $i->{src}
+      };
+
+      unless($_photo_list->{$i->{photo_id}}){
+        $_photo_list->{$i->{photo_id}} = $_tmp;
+      }else{
+        $_photo_list->{$i->{photo_id}} = $_tmp if $i->{width} > $_photo_list->{$i->{photo_id}}->{width} ;
+      }
+    }
+
+    foreach my $k (keys %$_photo_list){
+      my $i = $_photo_list->{$k};
+      $self->db->update('facebook_photo',
+        +{
+          img_std_url=>$i->{src},
+          img_std_size=>$i->{width}."x".$i->{height}
+          },
+        +{facebook_object_id=>$i->{photo_id}}
+         );
+    }
 
     return $self->render_json({status=>'ok'});
 }
