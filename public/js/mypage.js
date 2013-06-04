@@ -158,4 +158,7 @@ $(function () {
     $("img.photo").lazyload();
     $("img.photo").click(function(){setIgnoreImg(this);});
     delayDataSubmit();
+    if($(".photo").length == 0){//if any photo not found. update once.
+        updateData();
+    }
 });
